@@ -65,7 +65,8 @@ public class GameEngine : MonoBehaviour {
 
 		// configuring UI buttons
 		connectionPanel.connectBtn.onClick.AddListener (this.Connect);
-		foreach (Button btn in disconnectBtn)
+		connectionPanel.QuitBtn.onClick.AddListener(this.Quit);
+			foreach (Button btn in disconnectBtn)
 			btn.onClick.AddListener (this.Disconnect);
 		continueBtn.onClick.AddListener (this.restartGame);
 		Debug.Log ("init finished");
@@ -115,6 +116,16 @@ public class GameEngine : MonoBehaviour {
 	void Disconnect()
 	{
 		_scene.Disconnect ();
+		connectionPanel.gameObject.SetActive (true);
+		leaderboard.gameObject.SetActive (false);
+		gameOverPanel.SetActive (false);
+		disconnectBtn [0].gameObject.SetActive(false);
+		foreach (Image img in lifeImgs)
+			img.enabled = false;
+	}
+
+	void Quit()
+	{
 		Application.Quit ();
 	}
 
@@ -164,7 +175,6 @@ public class GameEngine : MonoBehaviour {
 
 	public void GameOver()
 	{
-		_isPlaying = false;
 		_isOver = true;
 	}
 
@@ -278,8 +288,11 @@ public class GameEngine : MonoBehaviour {
 		}
 		if (_isOver == true)
 		{
-			_isPlaying = false;
-			gameOverPanel.gameObject.SetActive(true);
+			if (_isPlaying == true)
+			{
+				_isPlaying = false;
+				gameOverPanel.gameObject.SetActive(true);
+			}
 			_isOver = false;
 		}
 	}

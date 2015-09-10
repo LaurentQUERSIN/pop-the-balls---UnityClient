@@ -7,4 +7,5 @@ public class ConnectionPanel : MonoBehaviour {
 	public Text username;
 	public Text error;
 	public Button connectBtn;
+	public Button QuitBtn;
 }
