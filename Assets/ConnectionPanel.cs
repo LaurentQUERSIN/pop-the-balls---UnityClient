@@ -2,7 +2,7 @@
 using UnityEngine.UI;
 using System.Collections;
 
-public class connectionPanel : MonoBehaviour {
+public class ConnectionPanel : MonoBehaviour {
 
 	public Text username;
 	public Text error;
