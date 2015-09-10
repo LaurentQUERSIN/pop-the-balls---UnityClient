@@ -26,16 +26,20 @@ public class GameEngine : MonoBehaviour {
 	public GameObject						ballTemplate;
 	public Camera							mainCamera;
 
+	private string							version = "a0.2";
+
 	private Scene							_scene;
 	private Client							_local_client;
-	private Dictionary<int, GameObject>	    _balls;
-	private List<ball>						_ballsToCreate;
+	private Dictionary<int, GameObject>		    _balls;
+	private List<Ball>						_ballsToCreate;
 	private List<int>						_ballsToDestroy;
 	private LeaderBoardDtO					_lbDtO = null;
 
 	private bool 							_connectionFailed = false;
 	private bool							_connecting = false;
 	private bool							_isPlaying = false;
+	private bool							_isOver = false;
+	private bool							_decreaseLife = false;
 	private long							_lastUpdate = 0;
 
 	private byte							life = 3;
@@ -54,7 +58,7 @@ public class GameEngine : MonoBehaviour {
 		// creating basic configs
 		UniRx.MainThreadDispatcher.Initialize();
 		_balls = new Dictionary<int, GameObject> ();
-		_ballsToCreate = new List<ball>();
+		_ballsToCreate = new List<Ball>();
 		_ballsToDestroy = new List<int>();
 		var config = ClientConfiguration.ForAccount("7794da14-4d7d-b5b5-a717-47df09ca8492", "poptheballs");
 		_local_client = new Client (config);
@@ -87,7 +91,8 @@ public class GameEngine : MonoBehaviour {
 		_connecting = true;
 		connectionPanel.error.text = "Connecting";
 		Debug.Log ("try to connect");
-		_local_client.GetPublicScene ("main", connectionPanel.username.text).ContinueWith (task => 
+		ConnectionDtO cdto = new ConnectionDtO(connectionPanel.username.text, version);
+		_local_client.GetPublicScene ("main", cdto).ContinueWith (task => 
 		{
 			if (task.IsFaulted)
 			{
@@ -141,7 +146,6 @@ public class GameEngine : MonoBehaviour {
 
 	public void onClick(Packet<IScenePeer> response)
 	{
-		Debug.Log ("response to the click received !");
 		var reader = new BinaryReader (response.Stream);
 		int statut = reader.ReadInt32 ();
 		if (statut == 0)
@@ -150,23 +154,18 @@ public class GameEngine : MonoBehaviour {
 			Debug.Log ("touched");
 		else if (statut == 2)
 		{
-			Debug.Log ("touched wrong ball !!");
 			life = reader.ReadByte();
+			Debug.Log ("touched wrong ball !! new life = " + life.ToString());
+			_decreaseLife = true;
 			if (life == 0)
 				GameOver();
-			else
-			{
-				int i = 2;
-				while (i > life)
-					lifeImgs[i--].enabled = false;
-			}
 		}
 	}
 
 	public void GameOver()
 	{
 		_isPlaying = false;
-		gameOverPanel.SetActive (true);
+		_isOver = true;
 	}
 
 	public void restartGame()
@@ -188,8 +187,10 @@ public class GameEngine : MonoBehaviour {
 			float y = reader.ReadSingle();
 			float vx = reader.ReadSingle();
 			float vy = reader.ReadSingle();
+			long time = reader.ReadInt64();
+			int ot = reader.ReadInt32();
 
-			_ballsToCreate.Add(new ball(x, y, vx, vy, id));
+			_ballsToCreate.Add(new Ball(x, y, vx, vy, id, time, ot));
 		}
 		catch (Exception e)
 		{
@@ -213,17 +214,22 @@ public class GameEngine : MonoBehaviour {
 
 	void Update ()
 	{   
+		if (_connecting == true && _lastUpdate + 100 < _local_client.Clock)
+		{
+			CheckIfConnected ();
+			_lastUpdate = _local_client.Clock;
+		}
+		if (_lastUpdate + 1000 < _local_client.Clock && _scene != null && _scene.Connected)
+		{
+			_lastUpdate = _local_client.Clock;
+			
+			if (_lbDtO != null)
+				leaderboard.updateLeaderBoard(_lbDtO);
+			_scene.Rpc<string, LeaderBoardDtO> ("update_leaderBoard", "").Subscribe (DtO => {
+				onUpdateLeaderBoard (DtO);});
+		}
 		if (_isPlaying == true) 
 		{
-			if (_lastUpdate + 1000 < _local_client.Clock)
-			{
-				_lastUpdate = _local_client.Clock;
-
-				if (_lbDtO != null)
-					leaderboard.updateLeaderBoard(_lbDtO);
-				_scene.Rpc<string, LeaderBoardDtO> ("update_leaderBoard", "").Subscribe (DtO => {
-					onUpdateLeaderBoard (DtO);});
-			}
 			if (Input.GetMouseButtonDown (0))
 			{
 				Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
@@ -238,34 +244,43 @@ public class GameEngine : MonoBehaviour {
 				).Subscribe( rp => {
 					onClick(rp);});
 			}
-			while (_ballsToCreate.Count > 0)
-			{
-				Debug.Log ("intastiating ball");
-				ball temp = _ballsToCreate.First();
-				if (!_balls.ContainsKey(temp.id))
-				{
-					GameObject newBall = Instantiate (ballTemplate, new Vector3 (temp.x, temp.y, 0), Quaternion.identity) as GameObject;
-					newBall.GetComponent<Rigidbody2D> ().AddForce (new Vector2 (temp.vx, temp.vy));
-					_balls.Add (temp.id, newBall);
-				}
-				_ballsToCreate.Remove(_ballsToCreate.First());
-			}
-			while (_ballsToDestroy.Count > 0)
-			{
-				Debug.Log ("destroying ball");
-				int temp = _ballsToDestroy.First();
-				if (_balls.ContainsKey(temp))
-				{
-					Destroy (_balls[temp] as UnityEngine.Object);
-					_balls.Remove(temp);	
-				}
-				_ballsToDestroy.Remove(temp);
-			}
 		}
-		else if (_connecting == true && _lastUpdate + 100 < _local_client.Clock)
+		while (_ballsToCreate.Count > 0)
 		{
-			CheckIfConnected ();
-			_lastUpdate = _local_client.Clock;
+			Ball temp = _ballsToCreate.First();
+			if (!_balls.ContainsKey(temp.id))
+			{
+				GameObject newBallGO = Instantiate (ballTemplate, new Vector3 (temp.x, temp.y, 0), Quaternion.identity) as GameObject;
+				newBallGO.GetComponent<Rigidbody2D> ().AddForce (new Vector2 (temp.vx, temp.vy));
+				newBallGO.GetComponent<ball_behaviour>().creation_time = temp.creation_time;
+				newBallGO.GetComponent<ball_behaviour>().oscillation_time = temp.oscillation_time;
+				newBallGO.GetComponent<ball_behaviour>().local = _local_client;
+				_balls.Add (temp.id, newBallGO);
+			}
+			_ballsToCreate.Remove(_ballsToCreate.First());
+		}
+		while (_ballsToDestroy.Count > 0)
+		{
+			int temp = _ballsToDestroy.First();
+			if (_balls.ContainsKey(temp))
+			{
+				Destroy (_balls[temp] as UnityEngine.Object);
+				_balls.Remove(temp);
+			}
+			_ballsToDestroy.Remove(temp);
+		}
+		if (_decreaseLife == true)
+		{
+			int i = 2;
+			while (i >= life)
+				lifeImgs[i--].enabled = false;
+			_decreaseLife = false;
+		}
+		if (_isOver == true)
+		{
+			_isPlaying = false;
+			gameOverPanel.gameObject.SetActive(true);
+			_isOver = false;
 		}
 	}
 }
