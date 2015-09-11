@@ -26,7 +26,7 @@ public class GameEngine : MonoBehaviour {
 	public GameObject						ballTemplate;
 	public Camera							mainCamera;
 
-	private string							version = "a0.2";
+	private string							version = "a0.3";
 
 	private Scene							_scene;
 	private Client							_local_client;
@@ -39,7 +39,7 @@ public class GameEngine : MonoBehaviour {
 	private bool							_connecting = false;
 	private bool							_isPlaying = false;
 	private bool							_isOver = false;
-	private bool							_decreaseLife = false;
+	private bool							_changedLife = false;
 	private long							_lastUpdate = 0;
 
 	private byte							life = 3;
@@ -158,19 +158,26 @@ public class GameEngine : MonoBehaviour {
 	public void onClick(Packet<IScenePeer> response)
 	{
 		var reader = new BinaryReader (response.Stream);
-		int statut = reader.ReadInt32 ();
-		if (statut == 0)
+		int status = reader.ReadInt32 ();
+		if (status == 0)
 			Debug.Log ("missed");
-		else if (statut == 1) 
+		else if (status == 1) 
 			Debug.Log ("touched");
-		else if (statut == 2)
+		else if (status == 2)
 		{
 			life = reader.ReadByte();
-			Debug.Log ("touched wrong ball !! new life = " + life.ToString());
-			_decreaseLife = true;
+			_changedLife = true;
 			if (life == 0)
 				GameOver();
 		}
+		else if (status == 3)
+		{
+			life = reader.ReadByte();
+			_changedLife = true;
+		}
+		_lastUpdate = _local_client.Clock;
+		_scene.Rpc<string, LeaderBoardDtO> ("update_leaderBoard", "").Subscribe (DtO => {
+			onUpdateLeaderBoard (DtO);});
 	}
 
 	public void GameOver()
@@ -208,6 +215,19 @@ public class GameEngine : MonoBehaviour {
 		}
 	}
 
+//	public void onCreateBalls(Packet<IScenePeer> packet)
+//	{
+//		try
+//		{
+//			BallDtO data = packet.ReadObject<BallDtO>();
+//			_ballsToCreate.Add(new Ball(data));
+//		}
+//		catch (Exception e)
+//		{
+//			Debug.Log ("error while reading ball data");
+//		}
+//	}
+
 	public void onDestroyBalls(Packet<IScenePeer> packet)
 	{
 		var reader = new BinaryReader (packet.Stream);
@@ -229,12 +249,14 @@ public class GameEngine : MonoBehaviour {
 			CheckIfConnected ();
 			_lastUpdate = _local_client.Clock;
 		}
+		if (_lbDtO != null)
+		{
+			leaderboard.updateLeaderBoard(_lbDtO);
+			_lbDtO = null;
+		}
 		if (_lastUpdate + 1000 < _local_client.Clock && _scene != null && _scene.Connected)
 		{
 			_lastUpdate = _local_client.Clock;
-			
-			if (_lbDtO != null)
-				leaderboard.updateLeaderBoard(_lbDtO);
 			_scene.Rpc<string, LeaderBoardDtO> ("update_leaderBoard", "").Subscribe (DtO => {
 				onUpdateLeaderBoard (DtO);});
 		}
@@ -279,12 +301,14 @@ public class GameEngine : MonoBehaviour {
 			}
 			_ballsToDestroy.Remove(temp);
 		}
-		if (_decreaseLife == true)
+		if (_changedLife == true)
 		{
-			int i = 2;
-			while (i >= life)
-				lifeImgs[i--].enabled = false;
-			_decreaseLife = false;
+			int i = 0;
+			while (i < life)
+				lifeImgs[i++].enabled = true;
+			while (i < 3)
+				lifeImgs[i++].enabled = false;
+			_changedLife = false;
 		}
 		if (_isOver == true)
 		{
@@ -294,6 +318,14 @@ public class GameEngine : MonoBehaviour {
 				gameOverPanel.gameObject.SetActive(true);
 			}
 			_isOver = false;
+		}
+	}
+
+	void OnApplicationQuit()
+	{
+		if (_scene != null)
+		{
+			_scene.Disconnect();
 		}
 	}
 }

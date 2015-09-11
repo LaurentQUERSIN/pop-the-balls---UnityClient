@@ -8,7 +8,7 @@ public class ball_behaviour : MonoBehaviour
 	public long creation_time;
 	public Client local;
 	public int oscillation_time = 1000;
-
+	
 	// Use this for initialization
 	void Start () {
 		this.gameObject.GetComponent<SpriteRenderer>().color = Color.blue;
@@ -20,9 +20,9 @@ public class ball_behaviour : MonoBehaviour
 		if (local != null)
 		{
 			if (((local.Clock - creation_time) / oscillation_time) % 2 == 0)
-				this.gameObject.GetComponent<SpriteRenderer>().color = Color.blue;
+				this.gameObject.GetComponent<SpriteRenderer>().color = Color.Lerp(this.gameObject.GetComponent<SpriteRenderer>().color, Color.blue, 2f * Time.deltaTime);
 			else			
-				this.gameObject.GetComponent<SpriteRenderer>().color = Color.red;
+				this.gameObject.GetComponent<SpriteRenderer>().color = Color.Lerp(this.gameObject.GetComponent<SpriteRenderer>().color, Color.red, 2f * Time.deltaTime);
 		}
 	}
 }
