@@ -26,7 +26,7 @@ public class GameEngine : MonoBehaviour {
 	public GameObject						ballTemplate;
 	public Camera							mainCamera;
 
-	private string							version = "a0.3";
+	private string							version = "a0.3.1";
 
 	private Scene							_scene;
 	private Client							_local_client;
@@ -296,7 +296,8 @@ public class GameEngine : MonoBehaviour {
 			int temp = _ballsToDestroy.First();
 			if (_balls.ContainsKey(temp))
 			{
-				Destroy (_balls[temp] as UnityEngine.Object);
+				if (_balls[temp] != null)
+					_balls[temp].GetComponent<ball_behaviour>().isDead = true;
 				_balls.Remove(temp);
 			}
 			_ballsToDestroy.Remove(temp);
