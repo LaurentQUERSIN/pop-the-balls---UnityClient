@@ -19,7 +19,7 @@ public class ball_behaviour : MonoBehaviour
 	{
 		if (local != null)
 		{
-			if (((local.Clock - creation_time) / oscillation_time) % 2 == 0)
+			if (((local.Clock - creation_time) / (oscillation_time - 500) % 2 == 0))
 				this.gameObject.GetComponent<SpriteRenderer>().color = Color.Lerp(this.gameObject.GetComponent<SpriteRenderer>().color, Color.blue, 2f * Time.deltaTime);
 			else			
 				this.gameObject.GetComponent<SpriteRenderer>().color = Color.Lerp(this.gameObject.GetComponent<SpriteRenderer>().color, Color.red, 2f * Time.deltaTime);

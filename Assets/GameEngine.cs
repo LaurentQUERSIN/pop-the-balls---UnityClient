@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using UnityStandardAssets.ImageEffects;
 using System.Collections;
 using System.Linq;
 using Stormancer;
@@ -26,18 +27,19 @@ public class GameEngine : MonoBehaviour {
 	public GameObject						ballTemplate;
 	public Camera							mainCamera;
 
-	private string							version = "a0.3.1";
+	private string							version = "a0.3.2";
 
 	private Scene							_scene;
 	private Client							_local_client;
-	private Dictionary<int, GameObject>		    _balls;
+	private Dictionary<int, GameObject>		_balls;
 	private List<Ball>						_ballsToCreate;
 	private List<int>						_ballsToDestroy;
 	private LeaderBoardDtO					_lbDtO = null;
 
-	private bool 							_connectionFailed = false;
 	private bool							_connecting = false;
+	private bool							_connected = false;
 	private bool							_isPlaying = false;
+	private bool							_start= false;
 	private bool							_isOver = false;
 	private bool							_changedLife = false;
 	private long							_lastUpdate = 0;
@@ -54,6 +56,7 @@ public class GameEngine : MonoBehaviour {
 		disconnectBtn [0].gameObject.SetActive(false);
 		foreach (Image img in lifeImgs)
 			img.enabled = false;
+		connectionPanel.error.text = "Please enter a username";
 
 		// creating basic configs
 		UniRx.MainThreadDispatcher.Initialize();
@@ -64,64 +67,51 @@ public class GameEngine : MonoBehaviour {
 		_local_client = new Client (config);
 
 		// configuring UI buttons
-		connectionPanel.connectBtn.onClick.AddListener (this.Connect);
 		connectionPanel.QuitBtn.onClick.AddListener(this.Quit);
 			foreach (Button btn in disconnectBtn)
 			btn.onClick.AddListener (this.Disconnect);
 		continueBtn.onClick.AddListener (this.restartGame);
+		connectionPanel.connectBtn.onClick.AddListener (this.clickOnPlay);
+		connectionPanel.EnableBloombtn.onClick.AddListener(this.onEnableBloom);
 		Debug.Log ("init finished");
 	}
 
 	void Connect()
 	{
-		Debug.Log ("start connection procedure");
-		// hidding UI (just to be sure)
-		connectionPanel.gameObject.SetActive (true);
-		leaderboard.gameObject.SetActive (false);
-		gameOverPanel.SetActive (false);
-		disconnectBtn [0].gameObject.SetActive(false);
-		foreach (Image img in lifeImgs)
-			img.enabled = false;
-
-		if (_connecting == true)
-			return;
-		if (connectionPanel.username.text == "") {
-			connectionPanel.error.text = "Please enter a username";
-			return;
-		}
-		_connecting = true;
-		connectionPanel.error.text = "Connecting";
-		Debug.Log ("try to connect");
-		ConnectionDtO cdto = new ConnectionDtO(connectionPanel.username.text, version);
-		_local_client.GetPublicScene ("main", cdto).ContinueWith (task => 
+		if (_connected == false && _connecting == false)
 		{
-			if (task.IsFaulted)
-			{
-				Debug.Log ("connextion failed ");
-				_connectionFailed = true;
-			}
-			else
-			{
-				_scene = task.Result;
-				Debug.Log ("configuring routes");
-				_scene.AddRoute ("create_ball", onCreateBalls);
-				_scene.AddRoute ("destroy_ball", onDestroyBalls);
-				Debug.Log ("connecting to remote scene");
-				_scene.Connect().ContinueWith( Task => {});
-				UniRx.MainThreadDispatcher.Post (() => {});
-			}
-		});
+			Debug.Log ("start connection procedure");
+			ConnectionDtO cdto = new ConnectionDtO(connectionPanel.username.text, version);
+			connectionPanel.error.text = "Connecting";
+			_connecting = true;
+			_local_client.GetPublicScene ("main", cdto).ContinueWith (task => 
+			                                                          {
+				if (task.IsFaulted)
+					Debug.Log ("connection failed : " + task.Exception.Message);
+				else
+				{
+					_scene = task.Result;
+					Debug.Log ("configuring routes");
+					_scene.AddRoute ("create_ball", onCreateBalls);
+					_scene.AddRoute ("destroy_ball", onDestroyBalls);
+					Debug.Log ("connecting to remote scene");
+					_scene.Connect().ContinueWith( Task => {});
+					UniRx.MainThreadDispatcher.Post (() => {});
+				}
+			});
+		}
 	}
 
 	void Disconnect()
 	{
-		_scene.Disconnect ();
+		_isPlaying = false;
 		connectionPanel.gameObject.SetActive (true);
 		leaderboard.gameObject.SetActive (false);
 		gameOverPanel.SetActive (false);
 		disconnectBtn [0].gameObject.SetActive(false);
 		foreach (Image img in lifeImgs)
 			img.enabled = false;
+		_scene.Send("exit", "");
 	}
 
 	void Quit()
@@ -131,28 +121,34 @@ public class GameEngine : MonoBehaviour {
 
 	public void CheckIfConnected()
 	{
-		Debug.Log ("check if connected");
-		if (_scene != null && _scene.Connected)
+		if (_connecting == true && _lastUpdate + 100 < _local_client.Clock)
 		{
-			Debug.Log("connection succeful");
-			connectionPanel.gameObject.SetActive (false);
-			leaderboard.gameObject.SetActive (true);
-			disconnectBtn [0].gameObject.SetActive (true);
-			foreach (Image img in lifeImgs)
-				img.enabled = true;
-			leaderboard.localTxt.text = connectionPanel.username.text;
+			_lastUpdate = _local_client.Clock;
+			Debug.Log ("check if connected");
+			if (_scene != null && _scene.Connected)
+			{
+				_connected = true;
+				_connecting = false;
+				connectionPanel.error.text = "Please enter a username";
+				Debug.Log("connection succeful");
+			}
+		}
+	}
 
-			_connecting = false;
-			_isPlaying = true;
-			_scene.Rpc<string, string>("update_leaderBoard", "");
-		}
-		else if (_connectionFailed == true)
+	public void clickOnPlay()
+	{
+		if (_scene != null && _connected == true)
 		{
-			connectionPanel.error.text = "Connection failed";
-			_connecting = false;
-			_connectionFailed = false;
-			_scene = null;
+			ConnectionDtO ctdo = new ConnectionDtO(connectionPanel.username.text, version);
+			_scene.Rpc<ConnectionDtO, int>("play", ctdo).Subscribe(resp => {onPlay(resp);});
 		}
+	}
+
+	public void onPlay(int status)
+	{
+		Debug.Log ("connection request reponse received : status = " + status.ToString());
+		if (status == 0)
+			_start = true;
 	}
 
 	public void onClick(Packet<IScenePeer> response)
@@ -192,6 +188,15 @@ public class GameEngine : MonoBehaviour {
 			img.enabled = true;
 		_isPlaying = true;
 		_scene.Rpc<string, string>("update_leaderBoard", "");
+	}
+
+	public void onEnableBloom()
+	{
+		Bloom bloom = mainCamera.GetComponent<Bloom>();
+		if (bloom.enabled == false)
+			bloom.enabled = true;
+		else
+			bloom.enabled = false;
 	}
 
 	public void onCreateBalls(Packet<IScenePeer> packet)
@@ -242,13 +247,8 @@ public class GameEngine : MonoBehaviour {
 		//leaderboard.updateLeaderBoard (update);
 	}
 
-	void Update ()
-	{   
-		if (_connecting == true && _lastUpdate + 100 < _local_client.Clock)
-		{
-			CheckIfConnected ();
-			_lastUpdate = _local_client.Clock;
-		}
+	public void updateLeaderBoard()
+	{
 		if (_lbDtO != null)
 		{
 			leaderboard.updateLeaderBoard(_lbDtO);
@@ -260,11 +260,22 @@ public class GameEngine : MonoBehaviour {
 			_scene.Rpc<string, LeaderBoardDtO> ("update_leaderBoard", "").Subscribe (DtO => {
 				onUpdateLeaderBoard (DtO);});
 		}
+	}
+
+	void Update ()
+	{   
+		Connect();
+		CheckIfConnected();
+		updateLeaderBoard();
 		if (_isPlaying == true) 
 		{
-			if (Input.GetMouseButtonDown (0))
+			if (Input.GetMouseButtonDown (0) || (Input.touchSupported && Input.GetTouch(0).phase == TouchPhase.Began))
 			{
-				Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+				Ray ray;
+				if (Input.touchSupported && Input.GetTouch(0).phase == TouchPhase.Began)
+					ray = mainCamera.ScreenPointToRay(Input.GetTouch(0).position);
+				else
+					ray = mainCamera.ScreenPointToRay(Input.mousePosition);
 				RaycastHit hit;
 				Physics.Raycast(ray, out hit);
 				_scene.Rpc("click", s => {
@@ -319,6 +330,18 @@ public class GameEngine : MonoBehaviour {
 				gameOverPanel.gameObject.SetActive(true);
 			}
 			_isOver = false;
+		}
+		if (_start == true)
+		{
+			connectionPanel.error.text = "";
+			connectionPanel.gameObject.SetActive (false);
+			leaderboard.gameObject.SetActive (true);
+			disconnectBtn [0].gameObject.SetActive (true);
+			foreach (Image img in lifeImgs)
+				img.enabled = true;
+			leaderboard.localTxt.text = connectionPanel.username.text;
+			_isPlaying = true;
+			_start = false;
 		}
 	}
 

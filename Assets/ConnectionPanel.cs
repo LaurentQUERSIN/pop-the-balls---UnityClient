@@ -8,4 +8,5 @@ public class ConnectionPanel : MonoBehaviour {
 	public Text error;
 	public Button connectBtn;
 	public Button QuitBtn;
+	public Button EnableBloombtn;
 }
