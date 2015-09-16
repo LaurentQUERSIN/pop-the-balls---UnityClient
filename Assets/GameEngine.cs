@@ -98,7 +98,28 @@ public class GameEngine : MonoBehaviour {
 					_scene.AddRoute ("create_ball", onCreateBalls);
 					_scene.AddRoute ("destroy_ball", onDestroyBalls);
 					Debug.Log ("connecting to remote scene");
-					_scene.Connect().ContinueWith( Task => {});
+					_scene.Connect().ContinueWith( t => 
+					    {
+						Debug.Log("check if connection failed");
+						if (_scene.Connected)
+						{
+							_connected = true;
+							_connecting = false;
+							Debug.Log("connection succeful");
+							UniRx.MainThreadDispatcher.Post (() =>{
+								connectionPanel.error.text = "Please enter a username";
+								connectionPanel.connectBtn.enabled = true;
+							});
+						}
+						else
+						{
+							Debug.Log ("connection failed: " + t.Exception.InnerException.InnerException.Message);
+							_connecting = false;
+							UniRx.MainThreadDispatcher.Post (() =>{
+								connectionPanel.error.text = t.Exception.InnerException.InnerException.Message;
+							});
+						}
+					});
 				}
 			});
 		}
@@ -120,24 +141,7 @@ public class GameEngine : MonoBehaviour {
 	{
 		Application.Quit ();
 	}
-
-	public void CheckIfConnected()
-	{
-		if (_connecting == true && _lastUpdate + 100 < _local_client.Clock)
-		{
-			_lastUpdate = _local_client.Clock;
-			Debug.Log ("check if connected");
-			if (_scene != null && _scene.Connected)
-			{
-				_connected = true;
-				_connecting = false;
-				connectionPanel.error.text = "Please enter a username";
-				connectionPanel.connectBtn.enabled = true;
-				Debug.Log("connection succeful");
-			}
-		}
-	}
-
+	
 	public void clickOnPlay()
 	{
 		if (_scene != null && _connected == true)
@@ -299,7 +303,6 @@ public class GameEngine : MonoBehaviour {
 	void Update ()
 	{   
 		Connect();
-		CheckIfConnected();
 		updateLeaderBoard();
 		if (_isPlaying == true) 
 		{
