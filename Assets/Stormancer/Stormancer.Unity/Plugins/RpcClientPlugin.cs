@@ -22,6 +22,7 @@ namespace Stormancer.Plugins
         internal const string PluginName = "stormancer.plugins.rpc";
         public void Build(PluginBuildContext ctx)
         {
+
             ctx.SceneCreated += scene =>
             {
                 var rpcParams = scene.GetHostMetadata(PluginName);
@@ -99,11 +100,13 @@ namespace Stormancer.Plugins
                         var rr = _scene.RemoteRoutes.FirstOrDefault(r => r.Name == route);
                         if (rr == null)
                         {
+							_scene.GetComponent<ILogger>().Error("Tried to send a message on a non existing route");
                             throw new ArgumentException("The target route does not exist on the remote host.");
                         }
                         string version;
                         if (!rr.Metadata.TryGetValue(RpcClientPlugin.PluginName, out version) || version != RpcClientPlugin.Version)
                         {
+							_scene.GetComponent<ILogger>().Error("Target remote does not support RPC");
                             throw new InvalidOperationException("The target remote route does not support the plugin RPC version " + Version);
                         }
 
@@ -171,6 +174,7 @@ namespace Stormancer.Plugins
                             }
                             else
                             {
+								_scene.GetComponent<ILogger>().Error("failed to create procedure");
                                 var ex = t.Exception.InnerExceptions.OfType<ClientException>();
                                 if (ex.Any())
                                 {
@@ -182,6 +186,8 @@ namespace Stormancer.Plugins
 
                     }
                 }, new Dictionary<string, string> { { "stormancer.plugins.rpc", "1.0.0" } });
+				_scene.GetComponent<ILogger>().Trace("Procedure succesfully created");
+
             }
             private ushort ReserveId()
             {
@@ -196,6 +202,7 @@ namespace Stormancer.Plugins
                             _currentRequestId++;
                             if (loop > ushort.MaxValue)
                             {
+								_scene.GetComponent<ILogger>().Error("Too many request pending, unable to start a new one.");
                                 throw new InvalidOperationException("Too many requests in progress, unable to start a new one.");
                             }
                         }
@@ -239,7 +246,7 @@ namespace Stormancer.Plugins
                 var rq = GetPendingRequest(p);
                 if (rq != null)
                 {
-                    rq.Observer.OnError(new ClientException(p.ReadObject<string>()));
+                   rq.Observer.OnError(new ClientException(p.ReadObject<string>()));
                 }
             }
 

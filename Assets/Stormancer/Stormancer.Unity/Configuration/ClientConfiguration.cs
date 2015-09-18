@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Stormancer.EditorPlugin;
 
 
 namespace Stormancer
@@ -99,6 +100,9 @@ namespace Stormancer
             MaxPeers = 20;
             Plugins = new List<IClientPlugin>();
             Plugins.Add(new RpcClientPlugin());
+#if UNITY_EDITOR
+			Plugins.Add(new StormancerEditorPlugin());
+#endif
             AsynchrounousDispatch = true;
             PingInterval = 5000;
         }

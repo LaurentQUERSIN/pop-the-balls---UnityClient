@@ -100,7 +100,6 @@ public class GameEngine : MonoBehaviour {
 					Debug.Log ("connecting to remote scene");
 					_scene.Connect().ContinueWith( t => 
 					    {
-						Debug.Log("check if connection failed");
 						if (_scene.Connected)
 						{
 							_connected = true;
@@ -113,10 +112,10 @@ public class GameEngine : MonoBehaviour {
 						}
 						else
 						{
-							Debug.Log ("connection failed: " + t.Exception.InnerException.InnerException.Message);
+							Debug.Log ("connection failed: " + t.Exception.InnerException.Message);
 							_connecting = false;
 							UniRx.MainThreadDispatcher.Post (() =>{
-								connectionPanel.error.text = t.Exception.InnerException.InnerException.Message;
+								connectionPanel.error.text = t.Exception.InnerException.Message;
 							});
 						}
 					});

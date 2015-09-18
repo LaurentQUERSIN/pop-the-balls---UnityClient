@@ -86,7 +86,7 @@ namespace Stormancer
             }
         }
 
-        private ILogger _logger = NullLogger.Instance;
+      
         private readonly IScheduler _scheduler;
 
         /// <summary>
@@ -96,19 +96,9 @@ namespace Stormancer
         {
             get
             {
-                return _logger;
+                return this.GetComponent<ILogger>();
             }
-            set
-            {
-                if (value == null)
-                {
-                    _logger = NullLogger.Instance;
-                }
-                else
-                {
-                    _logger = value;
-                }
-            }
+            
         }
 
         /// <summary>
@@ -119,14 +109,14 @@ namespace Stormancer
         {
             this._pingInterval = configuration.PingInterval;
             this._scheduler = configuration.Scheduler;
-            this._logger = configuration.Logger;
+            this.RegisterComponent<ILogger>(()=>configuration.Logger);
             this._accountId = configuration.Account;
             this._applicationName = configuration.Application;
             _apiClient = new ApiClient(configuration, _tokenHandler);
             //TODO handle scheduler in the transport
-            this._transport = configuration.TransportFactory(new Dictionary<string, object> { { "ILogger", this._logger }, { "IScheduler", this._scheduler } });
+            this._transport = configuration.TransportFactory(new Dictionary<string, object> { { "ILogger", this.Logger }, { "IScheduler", this._scheduler } });
             this._dispatcher = configuration.Dispatcher;
-            _requestProcessor = new Stormancer.Networking.Processors.RequestProcessor(_logger, Enumerable.Empty<IRequestModule>());
+            _requestProcessor = new Stormancer.Networking.Processors.RequestProcessor(Logger, Enumerable.Empty<IRequestModule>());
 
             _scenesDispatcher = new Processors.SceneDispatcher();
             this._dispatcher.AddProcessor(_requestProcessor);
@@ -260,6 +250,7 @@ namespace Stormancer
                     .Then(() => _transport.Connect(ci.TokenData.Endpoints[_transport.Name]))
                     .Then(connection =>
                     {
+							this.Logger.Trace("Trying to connect to endpoint : '{0}'\n to application : '{1}'\n with id : '{2}'", ci.TokenData.Endpoints[_transport.Name], ci.TokenData.Application, ci.TokenData.AccountId);
                         _serverConnection = connection;
 
                         foreach (var kvp in _metadata)
@@ -285,6 +276,7 @@ namespace Stormancer
                 {
                     if (result.SelectedSerializer == null)
                     {
+						this.Logger.Error("No serializer selected");
                         throw new InvalidOperationException("No serializer selected.");
                     }
                     _serverConnection.RegisterComponent(_serializers[result.SelectedSerializer]);
@@ -292,12 +284,18 @@ namespace Stormancer
                 }
                 return UpdateServerMetadata().Then(() =>
                 {
-                    var scene = new Scene(this._serverConnection, this, sceneId, ci.Token, result);
+                    var scene = new Scene(this._serverConnection, this, sceneId, ci.Token, result, _pluginCtx);
 
                     if (_pluginCtx.SceneCreated != null)
                     {
                         _pluginCtx.SceneCreated(scene);
                     }
+
+					var ev = _pluginCtx.SceneCreated;
+					if (ev != null)
+					{
+						ev(scene);
+					}
 
                     return scene;
                 });
@@ -369,13 +367,13 @@ namespace Stormancer
                 {
                     if (t.IsFaulted)
                     {
-                        _logger.Error("ping", "failed to ping server.");
+                        Logger.Error("ping", "failed to ping server.");
                     }
                 });
             }
             catch (Exception)
             {
-                _logger.Error("ping", "failed to ping server.");
+                Logger.Error("ping", "failed to ping server.");
                 return TaskHelper.FromResult(UniRx.Unit.Default);
             };
         }
@@ -413,7 +411,14 @@ namespace Stormancer
             return this.SendSystemRequest<Stormancer.Dto.ConnectToSceneMsg, Stormancer.Dto.ConnectionResult>((byte)SystemRequestIDTypes.ID_CONNECT_TO_SCENE, parameter)
                 .ContinueWith(t =>
                 {
-                    var result = t.Result;
+                    if(t.IsFaulted)
+					{
+						var ex = t.Exception.InnerException;
+						this.Logger.Error("Failed to connect to scene '{0}' : {1}",scene.Id,ex.Message);
+						throw t.Exception.InnerException;
+
+					}
+					var result = t.Result;
                     this.Logger.Trace("Received connection result. Scene handle: {0}", result.SceneHandle);
                     scene.CompleteConnectionInitialization(result);
                     _scenesDispatcher.AddScene(scene);
@@ -465,6 +470,12 @@ namespace Stormancer
             {
                 this._disposed = true;
                 Disconnect();
+
+				var ev = _pluginCtx.ClientDestroyed;
+				if(ev!=null)
+				{
+					ev(this);
+				}
             }
 
         }
@@ -506,6 +517,31 @@ namespace Stormancer
         {
             return this._serverConnection.GetConnectionStatistics();
         }
+
+
+		private Dictionary<Type, Func<object>> _registrations = new Dictionary<Type, Func<object>>();
+		public T GetComponent<T>()
+		{
+			return GetComponentFactory<T>()();
+		}
+
+		public Func<T> GetComponentFactory<T>()
+		{
+			Func<object> factory;
+			if (_registrations.TryGetValue(typeof(T), out factory))
+			{
+				return ()=>(T)factory();
+			}
+			else
+			{
+				return ()=>default(T);
+			}
+		}
+		
+		public void RegisterComponent<T>(Func<T> component)
+		{
+			_registrations[typeof(T)] = () => component();
+		}
     }
 
 }

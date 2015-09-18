@@ -50,6 +50,7 @@ namespace Stormancer
                     {
                         if (exception.StatusCode == HttpStatusCode.NotFound)
                         {
+							_config.Logger.Error("GetScene failed: Unable to get the scene. Please check you entered the correct account id, application name and scene id.");
                             throw new ArgumentException("Unable to get the scene {0}/{1}/{2}. Please check you entered the correct account id, application name and scene id.", exception);
                         }
                         throw;
@@ -60,7 +61,8 @@ namespace Stormancer
                 catch (Exception ex)
                 {
                     UnityEngine.Debug.LogException(ex);
-                    throw new InvalidOperationException("An error occured while retrieving the connection token. See the inner exception for more informations.", ex);
+					_config.Logger.Error("GetScene failed: cannot retreive the connection token.");
+					throw new InvalidOperationException("An error occured while retrieving the connection token. See the inner exception for more informations.", ex);
                 }
             });
         }
